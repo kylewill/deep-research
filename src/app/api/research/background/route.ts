@@ -16,7 +16,7 @@ import { nanoid } from 'nanoid';
 
 // Define max duration for this background function (optional, Vercel defaults apply otherwise)
 // Max duration is 900 seconds (15 minutes) on Pro, 60 seconds on Hobby.
-// export const maxDuration = 300; // Example: 5 minutes
+export const maxDuration = 300; // Example: 5 minutes
 
 // Schema for the data expected by the background task
 const backgroundTaskSchema = z.object({
