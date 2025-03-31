@@ -4,11 +4,11 @@ import { z } from "zod";
 // Schema for the initial trigger request
 const requestSchema = z.object({
   query: z.string(),
-  language: z.string().optional(),
-  thinkingModel: z.string().optional(),
-  networkingModel: z.string().optional(),
-  apiKey: z.string().optional(),
-  callbackUrl: z.string().optional(),
+  language: z.string().optional().default(() => process.env.LANGUAGE || "English"),
+  thinkingModel: z.string().optional().default(() => process.env.THINKING_MODEL || "gemini-2.0-flash"),
+  networkingModel: z.string().optional().default(() => process.env.NETWORKING_MODEL || "gemini-2.0-flash"),
+  apiKey: z.string().optional().default(() => process.env.GOOGLE_GENERATIVE_AI_API_KEY || ""),
+  callbackUrl: z.string().optional().default(() => process.env.CALLBACK_URL || ""),
 });
 
 const backgroundTaskSecret = process.env.BACKGROUND_TASK_SECRET;
@@ -73,11 +73,15 @@ export async function POST(req: NextRequest) {
     // Check if secret is configured
     if (!backgroundTaskSecret) {
       console.error("BACKGROUND_TASK_SECRET is not configured. Cannot trigger background task.");
-      throw new Error("Server configuration error.");
+      throw new Error("Server configuration error: BACKGROUND_TASK_SECRET is missing");
     }
     if (!appUrl) {
       console.error("APP_URL is not configured. Cannot determine background task URL.");
-      throw new Error("Server configuration error.");
+      throw new Error("Server configuration error: APP_URL is missing");
+    }
+    if (!validatedData.apiKey) {
+      console.error("No Google API Key found in request or environment.");
+      throw new Error("Google API Key is required but not found in request or environment");
     }
 
     // 2. Send Initial Slack Notification (Fire-and-forget)
