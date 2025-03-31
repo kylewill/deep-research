@@ -10,7 +10,7 @@ const GOOGLE_GENERATIVE_AI_API_KEY = process.env
 const nextConfig: NextConfig = {
   /* config options here */
   experimental: {
-    reactCompiler: true,
+    reactCompiler: false,
   },
   env: {
     NEXT_PUBLIC_VERSION: pkg.version,

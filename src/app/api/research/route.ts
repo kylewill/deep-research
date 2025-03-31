@@ -116,7 +116,7 @@ async function runResearchInBackground(params: {
     // 2. Process each research query
     const learnings: string[] = [];
     console.log(`[Background Research - ${query}] Starting to process ${queries.length} queries...`);
-    for (let i = 0; i < queries.length; i++) {
+    for (let i = 0; i < 1; i++) {
       const item = queries[i];
       console.log(`[Background Research - ${query}] Processing query ${i + 1}/${queries.length}: "${item.query}"`);
       let searchContent = "";

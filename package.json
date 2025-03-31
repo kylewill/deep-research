@@ -62,7 +62,7 @@
     "@eslint/eslintrc": "^3",
     "@tailwindcss/typography": "^0.5.16",
     "@types/file-saver": "^2.0.7",
-    "@types/node": "^20",
+    "@types/node": "^20.17.28",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "19.0.0-beta-aeaed83-20250323",
