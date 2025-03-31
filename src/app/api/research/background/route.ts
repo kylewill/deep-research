@@ -33,6 +33,21 @@ function getResponseLanguagePrompt(language?: string): string {
   return language ? `Please respond in ${language}.` : "";
 }
 
+function removeJsonMarkdown(text: string): string {
+  text = text.trim();
+  if (text.startsWith("```json")) {
+    text = text.slice(7);
+  } else if (text.startsWith("json")) {
+    text = text.slice(4);
+  } else if (text.startsWith("```")) {
+    text = text.slice(3);
+  }
+  if (text.endsWith("```")) {
+    text = text.slice(0, -3);
+  }
+  return text.trim();
+}
+
 function parsePartialJson(text: string): { state: string; value: unknown } {
   try {
     return { state: "successful-parse", value: JSON.parse(text) };
@@ -46,10 +61,6 @@ function parsePartialJson(text: string): { state: string; value: unknown } {
       return { state: "failed-parse", value: null };
     }
   }
-}
-
-function removeJsonMarkdown(text: string): string {
-  return text.replace(/```json\n?|\n?```/g, "").trim();
 }
 
 interface ResearchQuery {
