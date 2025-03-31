@@ -8,6 +8,7 @@ import {
   processSearchResultPrompt,
   writeFinalReportPrompt,
   getSERPQuerySchema,
+  getOutputGuidelinesPrompt,
 } from "@/utils/deep-research"; // Assuming these paths are correct
 import { isNetworkingModel } from "@/utils/models"; // Assuming this path is correct
 import { pick } from "radash";
@@ -16,7 +17,7 @@ import { nanoid } from 'nanoid';
 
 // Define max duration for this background function (optional, Vercel defaults apply otherwise)
 // Max duration is 900 seconds (15 minutes) on Pro, 60 seconds on Hobby.
-export const maxDuration = 300; // Example: 5 minutes
+export const maxDuration = 900; // Increased to 15 minutes
 
 // Schema for the data expected by the background task
 const backgroundTaskSchema = z.object({
@@ -262,23 +263,36 @@ export async function POST(req: NextRequest) {
 
       // Step 3: Generate final report
       console.log(`[Background Task - ${query}] Generating final report...`);
-      const finalReportResult = await streamText({
-        model: google(thinkingModel),
-        system: getSystemPrompt(),
-        prompt: [
-          writeFinalReportPrompt(query, learnings),
-          getResponseLanguagePrompt(language),
-        ].join("\\n\\n"),
-        onError: (event) => {
-          console.error(`[Background Task - ${query}] Error generating final report:`, event.error);
-          throw event.error;
-        },
-      });
+      try {
+        const finalReportResult = await streamText({
+          model: google(thinkingModel),
+          system: [getSystemPrompt(), getOutputGuidelinesPrompt()].join("\n\n"),
+          prompt: [
+            writeFinalReportPrompt(query, learnings),
+            getResponseLanguagePrompt(language),
+          ].join("\n\n"),
+          onError: (event) => {
+            console.error(`[Background Task - ${query}] Error generating final report:`, event.error);
+            throw event.error;
+          },
+        });
 
-      for await (const textPart of finalReportResult.textStream) {
-        reportContent += textPart;
+        // Accumulate the full content first
+        for await (const textPart of finalReportResult.textStream) {
+          reportContent += textPart;
+        }
+        
+        // Validate report content
+        if (!reportContent.trim()) {
+          throw new Error("Generated report is empty");
+        }
+        
+        console.log(`[Background Task - ${query}] Finished generating final report. Content length: ${reportContent.length}`);
+      } catch (reportError) {
+        console.error(`[Background Task - ${query}] Error during report generation:`, reportError);
+        researchError = reportError instanceof Error ? reportError : new Error(String(reportError));
+        reportContent = `Research completed, but report generation failed: ${researchError.message}`;
       }
-      console.log(`[Background Task - ${query}] Finished generating final report.`);
 
       // Step 4: Upload report content to Vercel Blob
       if (!researchError && reportContent) {
