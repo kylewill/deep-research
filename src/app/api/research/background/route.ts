@@ -71,13 +71,13 @@ interface ResearchQuery {
 
 async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
   let lastError: Error | null = null;
-  
+
   for (let i = 0; i < maxRetries; i++) {
     try {
       // Add timeout to prevent hanging
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
+
       const response = await fetch(url, {
         ...options,
         signal: controller.signal,
@@ -87,30 +87,30 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3)
           'Connection': 'keep-alive',
         },
       });
-      
+
       clearTimeout(timeoutId);
       return response;
     } catch (error) {
       lastError = error as Error;
-      
+
       // Check if it's a TLS/connection error
-      const isTlsError = error instanceof Error && 
-        (error.message.includes('TLS') || 
-         error.message.includes('ECONNRESET') ||
-         error.message.includes('ETIMEDOUT'));
-      
+      const isTlsError = error instanceof Error &&
+        (error.message.includes('TLS') ||
+          error.message.includes('ECONNRESET') ||
+          error.message.includes('ETIMEDOUT'));
+
       // If it's not a TLS error or we're on the last retry, throw
       if (!isTlsError || i === maxRetries - 1) {
         throw error;
       }
-      
+
       // For TLS errors, wait longer between retries
       const backoffTime = Math.pow(2, i) * 2000; // 2s, 4s, 8s
       console.log(`Retry attempt ${i + 1}/${maxRetries} after ${backoffTime}ms due to: ${error.message}`);
       await new Promise(resolve => setTimeout(resolve, backoffTime));
     }
   }
-  
+
   throw lastError || new Error('Max retries reached');
 }
 
@@ -281,12 +281,12 @@ export async function POST(req: NextRequest) {
         for await (const textPart of finalReportResult.textStream) {
           reportContent += textPart;
         }
-        
+
         // Validate report content
         if (!reportContent.trim()) {
           throw new Error("Generated report is empty");
         }
-        
+
         console.log(`[Background Task - ${query}] Finished generating final report. Content length: ${reportContent.length}`);
       } catch (reportError) {
         console.error(`[Background Task - ${query}] Error during report generation:`, reportError);
@@ -377,10 +377,10 @@ export async function POST(req: NextRequest) {
           text: `❌ Background research task failed to start for query \\\"${query}\\\". Error: ${error instanceof Error ? error.message : "Unknown setup error"}`
         };
         // Fire-and-forget notification attempt
-        fetchWithRetry(callbackUrl, { 
-          method: "POST", 
-          headers: { "Content-Type": "application/json" }, 
-          body: JSON.stringify(errorPayload) 
+        fetchWithRetry(callbackUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(errorPayload)
         }).catch(e => console.error("Failed to send background setup error notification to Slack:", e));
       } catch (e) { console.error("Error constructing background setup error notification for Slack:", e); }
     }

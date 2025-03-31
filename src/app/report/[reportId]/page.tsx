@@ -3,6 +3,12 @@ import { notFound } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import { cache } from 'react';
 
+// Define the PageProps type according to Next.js expectations
+type PageProps = {
+  params?: { reportId: string };
+  searchParams?: { [key: string]: string | string[] | undefined };
+};
+
 export const revalidate = 0; // Revalidate on every request for debugging
 
 const getReportData = cache(async (reportId: string) => {
@@ -62,15 +68,15 @@ const getReportData = cache(async (reportId: string) => {
   return { reportMarkdown, error };
 });
 
-// The Page component - use 'any' for props temporarily for debugging
-export default async function ReportPage(props: any) {
-  // Extract params manually, assuming the structure
-  const reportId = props?.params?.reportId;
+// Apply the PageProps type to the ReportPage component
+export default async function ReportPage({ params, searchParams }: PageProps) {
+  // Extract params - use optional chaining as params is optional in the type
+  const reportId = params?.reportId;
   console.log(`[Report Page Component - ${reportId}] Rendering page...`);
 
   // Ensure reportId is valid before proceeding
   if (typeof reportId !== 'string' || !reportId) {
-    console.error("[Report Page Component] Invalid or missing reportId in props.", props);
+    console.error("[Report Page Component] Invalid or missing reportId in props.", params);
     notFound();
   }
 
@@ -107,10 +113,10 @@ export default async function ReportPage(props: any) {
   );
 }
 
-// Optional: Add metadata for the page title - use 'any' for props temporarily
-export async function generateMetadata(props: any) {
-  // Extract params manually
-  const reportId = props?.params?.reportId;
+// Apply the PageProps type to the generateMetadata function
+export async function generateMetadata({ params }: PageProps) {
+  // Extract params - use optional chaining
+  const reportId = params?.reportId;
   if (typeof reportId !== 'string' || !reportId) {
     // Return default metadata or handle error
     return { title: "Research Report" };
