@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
         const initialSlackPayload = {
           text: `⏳ Research accepted for query: \"${query}\" (Processing starting...)`,
         };
-        fetch(callbackUrl, {
+        fetchWithRetry(callbackUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(initialSlackPayload),
@@ -99,46 +99,47 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Trigger Background Task via internal fetch
-    // Construct the full URL for the background endpoint
     const backgroundUrl = new URL("/api/research/background", appUrl).toString();
 
     console.log(`Triggering background task for query: "${query}" at ${backgroundUrl}`);
-    fetch(backgroundUrl, {
+    fetchWithRetry(backgroundUrl, {
       method: "POST",
       headers: {
         'Content-Type': 'application/json',
-        'X-Internal-Secret': backgroundTaskSecret, // Send the secret
+        'X-Internal-Secret': backgroundTaskSecret,
       },
-      body: JSON.stringify(validatedData), // Pass all validated data
+      body: JSON.stringify(validatedData),
     }).then(async triggerResponse => {
-      // Check if triggering the background task failed immediately
       if (!triggerResponse.ok) {
         const errorBody = await triggerResponse.text();
         console.error(`Background task trigger failed immediately. Status: ${triggerResponse.status}, Body: ${errorBody}`);
-        // We can't throw here as the main response is already sent (or about to be)
-        // We could potentially send another Slack message if critical
         if (callbackUrl) {
           try {
             const errorPayload = {
               text: `❌ Failed to *initiate* background research task (Status: ${triggerResponse.status}). Query: \"${query}\"`
             };
-            fetch(callbackUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(errorPayload) })
-              .catch(e => console.error("Failed to send background trigger error notification to Slack:", e));
+            fetchWithRetry(callbackUrl, { 
+              method: "POST", 
+              headers: { "Content-Type": "application/json" }, 
+              body: JSON.stringify(errorPayload) 
+            }).catch(e => console.error("Failed to send background trigger error notification to Slack:", e));
           } catch (e) { console.error("Error constructing background trigger error notification:", e); }
         }
       } else {
         console.log(`Successfully triggered background task (async) for query: "${query}"`);
       }
     }).catch(fetchError => {
-      // Handle network errors trying to reach the background endpoint
       console.error(`Error fetching background task endpoint: ${fetchError}`);
       if (callbackUrl) {
         try {
           const errorPayload = {
             text: `❌ Network error trying to initiate background research task. Query: \"${query}\". Error: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`
           };
-          fetch(callbackUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(errorPayload) })
-            .catch(e => console.error("Failed to send background fetch error notification to Slack:", e));
+          fetchWithRetry(callbackUrl, { 
+            method: "POST", 
+            headers: { "Content-Type": "application/json" }, 
+            body: JSON.stringify(errorPayload) 
+          }).catch(e => console.error("Failed to send background fetch error notification to Slack:", e));
         } catch (e) { console.error("Error constructing background fetch error notification:", e); }
       }
     });
@@ -153,7 +154,6 @@ export async function POST(req: NextRequest) {
     );
 
   } catch (error) {
-    // Handle validation errors or errors triggering the background task
     console.error("Outer Research API error (before background task):", error);
 
     if (callbackUrl && query) {
@@ -161,8 +161,11 @@ export async function POST(req: NextRequest) {
         const errorPayload = {
           text: `❌ Initial request failed for query \"${query}\" before processing could start. Error: ${error instanceof Error ? error.message : "Unknown setup error"}`
         };
-        fetch(callbackUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(errorPayload) })
-          .catch(e => console.error("Failed to send error notification to Slack:", e));
+        fetchWithRetry(callbackUrl, { 
+          method: "POST", 
+          headers: { "Content-Type": "application/json" }, 
+          body: JSON.stringify(errorPayload) 
+        }).catch(e => console.error("Failed to send error notification to Slack:", e));
       } catch (e) { console.error("Error constructing error notification for Slack:", e); }
     }
 

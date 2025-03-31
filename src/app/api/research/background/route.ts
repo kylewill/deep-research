@@ -363,8 +363,11 @@ export async function POST(req: NextRequest) {
           text: `❌ Background research task failed to start for query \\\"${query}\\\". Error: ${error instanceof Error ? error.message : "Unknown setup error"}`
         };
         // Fire-and-forget notification attempt
-        fetch(callbackUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(errorPayload) })
-          .catch(e => console.error("Failed to send background setup error notification to Slack:", e));
+        fetchWithRetry(callbackUrl, { 
+          method: "POST", 
+          headers: { "Content-Type": "application/json" }, 
+          body: JSON.stringify(errorPayload) 
+        }).catch(e => console.error("Failed to send background setup error notification to Slack:", e));
       } catch (e) { console.error("Error constructing background setup error notification for Slack:", e); }
     }
 
