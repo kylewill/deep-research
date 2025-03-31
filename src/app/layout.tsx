@@ -10,7 +10,7 @@ const HEAD_SCRIPTS = process.env.HEAD_SCRIPTS as string;
 
 export const metadata: Metadata = {
   title: "Deep Research",
-  description: "Deep Rssearch with Google Gemini Models",
+  description: "Deep Research",
   icons: {
     icon: {
       type: "image/svg+xml",
