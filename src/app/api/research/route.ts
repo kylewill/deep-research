@@ -61,6 +61,7 @@ async function runResearchInBackground(params: {
   callbackUrl: string | null;
 }) {
   const { query, language, thinkingModel, networkingModel, callbackUrl } = params;
+  console.log(`[Background Research - ${query}] Starting process...`);
 
   let reportContent = "";
   let researchError: Error | null = null;
@@ -70,6 +71,7 @@ async function runResearchInBackground(params: {
     let queries: Array<ResearchQuery & { state: string; learning: string }> = [];
 
     // 1. Generate initial research queries
+    console.log(`[Background Research - ${query}] Generating initial queries...`);
     const initialQueryResult = await streamText({
       model: google(thinkingModel),
       system: getSystemPrompt(),
@@ -78,7 +80,7 @@ async function runResearchInBackground(params: {
         getResponseLanguagePrompt(language),
       ].join("\n\n"),
       onError: (event) => {
-        console.error("Background - Error generating initial queries:", event.error);
+        console.error(`[Background Research - ${query}] Error generating initial queries:`, event.error);
         throw event.error;
       },
     });
@@ -104,10 +106,14 @@ async function runResearchInBackground(params: {
     if (queries.length === 0) {
       throw new Error("Failed to generate valid initial research queries.");
     }
+    console.log(`[Background Research - ${query}] Generated ${queries.length} initial queries.`);
 
     // 2. Process each research query
     const learnings: string[] = [];
-    for (const item of queries) {
+    console.log(`[Background Research - ${query}] Starting to process ${queries.length} queries...`);
+    for (let i = 0; i < queries.length; i++) {
+      const item = queries[i];
+      console.log(`[Background Research - ${query}] Processing query ${i + 1}/${queries.length}: "${item.query}"`);
       let searchContent = "";
       try {
         const searchResult = await streamText({
@@ -120,7 +126,7 @@ async function runResearchInBackground(params: {
             getResponseLanguagePrompt(language),
           ].join("\n\n"),
           onError: (event) => {
-            console.error(`Background - Error processing query '${item.query}':`, event.error);
+            console.error(`[Background Research - ${query}] Error processing query '${item.query}':`, event.error);
             throw event.error;
           },
         });
@@ -131,13 +137,16 @@ async function runResearchInBackground(params: {
         learnings.push(searchContent);
         item.state = "processed";
         item.learning = searchContent;
+        console.log(`[Background Research - ${query}] Successfully processed query ${i + 1}/${queries.length}.`);
       } catch (processingError) {
         item.state = "failed";
-        console.error(`Background - Skipping query '${item.query}' due to processing error:`, processingError);
+        console.error(`[Background Research - ${query}] Skipping query '${item.query}' due to processing error:`, processingError);
       }
     }
+    console.log(`[Background Research - ${query}] Finished processing queries. Collected ${learnings.length} learnings.`);
 
     // 3. Generate final report
+    console.log(`[Background Research - ${query}] Generating final report...`);
     const finalReportResult = await streamText({
       model: google(thinkingModel),
       system: getSystemPrompt(),
@@ -146,7 +155,7 @@ async function runResearchInBackground(params: {
         getResponseLanguagePrompt(language),
       ].join("\n\n"),
       onError: (event) => {
-        console.error("Background - Error generating final report:", event.error);
+        console.error(`[Background Research - ${query}] Error generating final report:`, event.error);
         throw event.error;
       },
     });
@@ -154,15 +163,17 @@ async function runResearchInBackground(params: {
     for await (const textPart of finalReportResult.textStream) {
       reportContent += textPart;
     }
+    console.log(`[Background Research - ${query}] Finished generating final report.`);
 
   } catch (error) {
     researchError = error instanceof Error ? error : new Error(String(error));
-    console.error("Background - Error during research process:", researchError);
+    console.error(`[Background Research - ${query}] Error during research process:`, researchError);
     reportContent = `Research failed: ${researchError.message}`;
   }
 
   // Send final report (or error) to callback URL if provided
   if (callbackUrl) {
+    console.log(`[Background Research - ${query}] Sending final notification to callback URL...`);
     try {
       const finalSlackPayload = {
         text: researchError
@@ -177,10 +188,14 @@ async function runResearchInBackground(params: {
         },
         body: JSON.stringify(finalSlackPayload),
       });
+      console.log(`[Background Research - ${query}] Successfully sent final notification.`);
     } catch (callbackError) {
-      console.error("Background - Final Slack notification callback error:", callbackError);
+      console.error(`[Background Research - ${query}] Final Slack notification callback error:`, callbackError);
     }
+  } else {
+    console.log(`[Background Research - ${query}] No callback URL provided. Skipping final notification.`);
   }
+  console.log(`[Background Research - ${query}] Process finished.`);
 }
 
 export async function POST(req: NextRequest) {
