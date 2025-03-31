@@ -11,6 +11,8 @@ import {
 } from "@/utils/deep-research";
 import { isNetworkingModel } from "@/utils/models";
 import { pick } from "radash";
+import { put } from '@vercel/blob';
+import { nanoid } from 'nanoid';
 
 // Request schema
 const requestSchema = z.object({
@@ -61,10 +63,13 @@ async function runResearchInBackground(params: {
   callbackUrl: string | null;
 }) {
   const { query, language, thinkingModel, networkingModel, callbackUrl } = params;
+  const researchStartTime = Date.now();
   console.log(`[Background Research - ${query}] Starting process...`);
 
   let reportContent = "";
   let researchError: Error | null = null;
+  let reportId: string | null = null;
+  let reportBlobUrl: string | null = null;
 
   try {
     // The actual research logic starts here
@@ -165,27 +170,60 @@ async function runResearchInBackground(params: {
     }
     console.log(`[Background Research - ${query}] Finished generating final report.`);
 
+    // 4. Upload report content to Vercel Blob
+    if (!researchError && reportContent) {
+      reportId = nanoid();
+      const pathname = `reports/${reportId}.md`;
+      console.log(`[Background Research - ${query}] Uploading report to Vercel Blob with pathname: ${pathname}`);
+      try {
+        const blob = await put(pathname, reportContent, {
+          access: 'public',
+          contentType: 'text/markdown; charset=utf-8',
+          addRandomSuffix: false,
+        });
+        reportBlobUrl = blob.url;
+        console.log(`[Background Research - ${query}] Successfully uploaded report to ${blob.url}`);
+      } catch (uploadError) {
+        console.error(`[Background Research - ${query}] Error uploading report to Vercel Blob:`, uploadError);
+        researchError = new Error(`Failed to upload report to storage: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}`);
+        reportContent = `Research completed, but failed to save report: ${researchError.message}`;
+        reportId = null;
+      }
+    }
+
   } catch (error) {
     researchError = error instanceof Error ? error : new Error(String(error));
     console.error(`[Background Research - ${query}] Error during research process:`, researchError);
     reportContent = `Research failed: ${researchError.message}`;
+    reportId = null;
   }
 
-  // Send final report (or error) to callback URL if provided
+  const researchDuration = (Date.now() - researchStartTime) / 1000;
+  console.log(`[Background Research - ${query}] Research process took ${researchDuration.toFixed(2)} seconds.`);
+
+  // Send final notification to callback URL if provided
   if (callbackUrl) {
     console.log(`[Background Research - ${query}] Sending final notification to callback URL...`);
-    try {
-      const finalSlackPayload = {
-        text: researchError
-          ? `❌ Research failed for query: \"${query}\"\nError: ${researchError.message}`
-          : `✅ *Research Report for Query:* ${query}\n\n---\n\n${reportContent}`,
-      };
+    let slackTextMessage = "";
 
+    if (researchError) {
+      slackTextMessage = `❌ Research failed for query: \"${query}\" (took ${researchDuration.toFixed(1)}s)\nError: ${researchError.message}`;
+    } else if (reportId && process.env.APP_URL) {
+      const reportPageUrl = `${process.env.APP_URL}/report/${reportId}`;
+      slackTextMessage = `✅ Research complete for query: \"${query}\" (took ${researchDuration.toFixed(1)}s)\nView Report: ${reportPageUrl}`;
+      if (reportBlobUrl) console.log(`[Background Research - ${query}] Report Blob URL: ${reportBlobUrl}`);
+    } else if (reportId && !process.env.APP_URL) {
+      console.error(`[Background Research - ${query}] APP_URL environment variable not set. Cannot create report link.`);
+      slackTextMessage = `⚠️ Research complete for query: \"${query}\" (took ${researchDuration.toFixed(1)}s), but APP_URL is not set to create a link. Report ID: ${reportId}`;
+    } else {
+      slackTextMessage = `❓ Research finished for query: \"${query}\" (took ${researchDuration.toFixed(1)}s), but report could not be linked or saved correctly.`;
+    }
+
+    try {
+      const finalSlackPayload = { text: slackTextMessage };
       await fetch(callbackUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(finalSlackPayload),
       });
       console.log(`[Background Research - ${query}] Successfully sent final notification.`);
@@ -194,12 +232,13 @@ async function runResearchInBackground(params: {
     }
   } else {
     console.log(`[Background Research - ${query}] No callback URL provided. Skipping final notification.`);
+    if (reportBlobUrl) console.log(`[Background Research - ${query}] Report Blob URL: ${reportBlobUrl}`);
   }
   console.log(`[Background Research - ${query}] Process finished.`);
 }
 
 export async function POST(req: NextRequest) {
-  let callbackUrl: string | null = null; // Keep track of callbackUrl for error handling
+  let callbackUrl: string | null = null;
 
   try {
     const body = await req.json();
@@ -208,26 +247,22 @@ export async function POST(req: NextRequest) {
     const {
       query,
       language = "",
-      thinkingModel = "gemini-2.0-flash", // Default thinking model
-      networkingModel = "gemini-2.0-flash", // Default networking model
+      thinkingModel = "gemini-2.0-flash",
+      networkingModel = "gemini-2.0-flash",
       apiKey,
     } = validatedData;
 
-    // Assign callbackUrl from validated data
     callbackUrl = validatedData.callbackUrl || null;
 
-    // Set the API key as an environment variable
     if (apiKey) {
       process.env.GOOGLE_GENERATIVE_AI_API_KEY = apiKey;
     }
 
-    // Send initial Slack notification if callbackUrl is provided
     if (callbackUrl) {
       try {
         const initialSlackPayload = {
           text: `⏳ Research accepted for query: \"${query}\" (Processing in background...)`,
         };
-        // Fire off the initial notification without waiting
         fetch(callbackUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -240,7 +275,6 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Trigger the background research process - DO NOT AWAIT
     runResearchInBackground({
       query,
       language,
@@ -249,7 +283,6 @@ export async function POST(req: NextRequest) {
       callbackUrl,
     });
 
-    // Return 202 Accepted immediately
     return new NextResponse(
       JSON.stringify({ success: true, message: "Research process started in background." }),
       {
@@ -261,20 +294,16 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("Outer Research API error:", error);
 
-    // Attempt to notify Slack about this early failure if possible
-    // callbackUrl might be null if parsing failed before it was assigned
     if (callbackUrl) {
       try {
         const errorPayload = {
           text: `❌ Initial request failed before processing could start. Error: ${error instanceof Error ? error.message : "Unknown setup error"}`
         };
-        // Don't necessarily wait for this, but log if it fails
         fetch(callbackUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(errorPayload) })
           .catch(e => console.error("Failed to send error notification to Slack:", e));
       } catch (e) { console.error("Error constructing error notification for Slack:", e); }
     }
 
-    // Return 500 error to the original client
     return NextResponse.json(
       {
         success: false,
